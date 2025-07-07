@@ -4,8 +4,10 @@ import requests
 import time
 import tkinter as tk
 from tkinter import filedialog
+import questionary
 from tqdm import tqdm
 from datetime import datetime
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -127,11 +129,11 @@ df_user_final = pd.DataFrame(
     'communityvisibilitystate': df_steam_user['communityvisibilitystate'],
     'profilestate': df_steam_user['profilestate'],
     'avatarhash': df_steam_user['avatarhash'],
-    'personaname': df_steam_user['personaname'],
+    'personaname': df_steam_user['personaname'] if 'personaname' in df_steam_user.columns else None,
     'profileurl': df_steam_user['profileurl'],
     'timecreated': df_steam_user['timecreated'].apply(lambda x: datetime.fromtimestamp(x)) if 'timecreated' in df_steam_user.columns else None,
     'lastlogoff': df_steam_user['lastlogoff'].apply(lambda x : datetime.fromtimestamp(x)) if 'lastlogoff' in df_steam_user.columns else None,
-    'loccountrycode': df_steam_user['loccountrycode'],
+    'loccountrycode': df_steam_user['loccountrycode'] if 'loccountrycode' in df_steam_user.columns else None,
     'avatarmedium': df_steam_user['avatarmedium']
     }
 )
@@ -168,6 +170,10 @@ def get_owned_games(steam_user_id, api_key):
 
 games_info = get_owned_games(steam_user_id, API_KEY).get('response').get('games')
 
+if games_info is None:
+    print(f'No games found for Steam ID {steam_user_id}. Please check the ID or if you profile is public.')
+    exit()
+
 game_list = []
 
 for game in enumerate(games_info):
@@ -194,7 +200,7 @@ df_game_information_final = pd.DataFrame(
     } 
 )
 
-#------------------------------------#Get list of game achievements
+#------------------------------------#Get list of game achievements #
 
 collect_achievements_info = []
 no_information_games = []
@@ -212,7 +218,7 @@ def get_game_achievements(steam_user_id, api_key, appid):
     - json_game_achievements (dict): The JSON response containing game achievements.
     """
     
-    game_achievements_url = f'http://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/?appid={appid}&key={api_key}&steamid={steam_user_id}'
+    game_achievements_url = f'http://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/?appid={appid}&key={api_key}&steamid={steam_user_id}&l=en'
     response = make_request(game_achievements_url, retry=4, wait=2)
 
     if response is not None and response.status_code == 200:
@@ -264,17 +270,18 @@ df_join_w_user = pd.merge(df_user_final, df_join_w_game, left_on='steamid', righ
 
 df_final = df_join_w_user.drop(columns=['steam_user_id_x', 'communityvisibilitystate', 'profilestate', 'avatarmedium'])
 
+player_name = df_final['personaname'].iloc[0]
 
-
-player_name = df_final['personaname'] if df_final['steamid'].iloc[0] == steam_user_id else None
-
-player_name.iloc[0]
-
-file_name = f"{player_name.iloc[0]}_steam_data_{datetime.now().strftime('%Y%m%d')}"
+file_name = f"{player_name}_steam_data_{datetime.now().strftime('%Y%m%d')}"
 file_name = file_name.replace(' ', '_')
 
+while True:
+    option = int(input("Select an option:\n1. Save as CSV\n2. Save as Excel\n3. Save as JSON\n"))
+    if option in [1, 2, 3]:
+        break
+    else:
+        print("Invalid option. Please select 1, 2, or 3.")
 
-option = int(input("Select an option:\n1. Save as CSV\n2. Save as Excel\n3. Save as JSON\n"))
 cust_path = input("Do you want to save the file in a custom path? (yes/no): ").lower()
 
 root = tk.Tk()
@@ -284,7 +291,6 @@ if cust_path == 'yes':
     print(f"Selected directory: {file_path}")
 else:
     print("Using current directory for saving files.")
-
 
 
 if option == 1:
@@ -303,5 +309,76 @@ elif option == 3:
     else:
         df_final.to_json(f"{file_name}.json", orient='records', lines=True)
 
+#------------------------------------#Chat gpt to search not unlock achievements #
 
+tips_option = str(input("Would you like to extract a list of needes to beat the game achievements? (yes/no):"))
 
+if tips_option.lower() == 'yes':
+
+    options = df_game_information_final['name'].tolist()
+    options.sort()
+
+    selected_option = questionary.select(
+        "Select a game to view unlocked achievements breakdonw:",
+        choices=options 
+    ).ask()
+
+    appid = df_game_information_final[df_game_information_final['name'] == selected_option]['steam_game_id'].iloc[0]
+
+    print(f"You selected: {selected_option}({appid})")
+
+    json_game_breakdown = get_game_achievements(steam_user_id, API_KEY, appid)
+
+    client = OpenAI(
+        api_key=os.getenv("GPT_API_KEY")
+    )
+
+    prompt = f"""
+    You are a famous and respected video game journalist who specializes in helping players achieve 100% completion, platinum trophies, or 1000G achievements.
+
+    I will provide you with:
+
+    - The name of a game
+    - A JSON file containing all achievements in this game, indicating which ones the player has unlocked and which ones remain locked.
+
+    unlocked achievements is set to true, and locked achievements is set to false.
+
+    For each locked achievement, please provide:
+
+    1. The achievement name.
+    2. A brief summary of what the player needs to do to unlock it.
+    3. Helpful tips to achieve it.
+
+    If an achievement has no description in the JSON, search for official information on the internet (e.g., game wikis, official sources).  
+    - If you find reliable info, include it as the summary and tips.  
+
+    for each achievement, please provide the information in the following format:
+    - Achievement Name: [Achievement Name]
+    - Summary: [Brief summary of what the player needs to do to unlock it]
+    - Tips: [Helpful tips to achieve it]
+
+    Please provide your response clearly and concisely, as if you are preparing a guide to be shown inside a gaming app.
+
+    Here is the game name and the JSON data:
+
+    Game: {selected_option}
+
+    Achievements JSON:  
+    {json_game_breakdown.get('playerstats').get('achievements')}
+    """
+
+    completion = client.chat.completions.create(
+        model=os.getenv("GPT_MODEL"),
+        store=True,
+        temperature=0.5,
+        max_tokens=800,
+        messages=[
+            {"role": "user", "content": prompt }
+        ]
+    )
+
+    content = completion.choices[0].message.content
+    print(content)
+    content.to_csv(f"{file_path}/{file_name}_breakdown.csv", index=False)
+elif tips_option.lower() == 'no':
+    print("No breakdown will be provided.")
