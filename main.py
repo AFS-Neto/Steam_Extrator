@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 #from PIL import Image
 #from io import BytesIO
 
-from utilities.defs import get_user_id_by_vanity, get_user_info, get_owned_games, get_game_achievements, save_file_opt, ai_achievement_breakdown, save_to_sqlite
+from utilities.defs import get_user_id_by_vanity, get_user_info, get_owned_games, get_game_achievements, save_file_opt, ai_achievement_breakdown, save_to_sqlite, extract_game_metadatas
 
 load_dotenv()
 
@@ -28,6 +28,8 @@ else:
     print(f"Steam User ID identified: {steam_user_id}")
 
 print("Start extracting information...")
+
+#------------------------------------Get all user informations by steam id
 
 players_info = get_user_info(steam_user_id, API_KEY).get('response').get('players')[0]
 
@@ -124,7 +126,17 @@ df_game_status = pd.merge(df_game_information_final, df_achievements_final, on='
 
 df_final = df_game_status.drop(columns=['steam_user_id_y', 'has_community_visible_stats','appid'])
 
-#------------------------------------Get all user informations by steam id
+#------------------------------------#Extract game metadatas 
+
+game_set = df_final['steam_game_id'].unique().tolist()
+
+try:
+    df_game_metadatas, num_not_found = extract_game_metadatas(game_set)
+    print(f'Total games with no metadata found: {num_not_found}, {num_not_found/len(game_set)*100:.2f}%')
+except Exception as e:
+    print(f'Error extracting game metadatas: {e}')
+
+#------------------------------------#options for user
 
 while True:
     action = int(input(

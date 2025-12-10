@@ -303,6 +303,7 @@ def save_to_sqlite(df, table_name, method ):
     try:
         print(f'Checking if table {table_name} exists...')
         df.head(0).to_sql(table_name, conn, if_exists='fail', index=False)  # Create table
+        print(f'Table {table_name} created successfully.')
     except Exception as e:
         print(f'Table {table_name} already exists. Proceeding to insert data.')
 
@@ -315,3 +316,49 @@ def save_to_sqlite(df, table_name, method ):
         print(f'Error inserting data into table {table_name}: {e}')
 
     conn.close()
+
+
+def extract_game_metadatas(game_list):
+
+    game_set = game_list
+
+    game_metadata_list = []
+    not_found_games_ids = []
+
+    for id in game_set:
+        
+        response = make_request(f'https://store.steampowered.com/api/appdetails?appids={id}')
+
+        json_response = response.json()
+
+        if not json_response.get(f'{id}').get('success'):
+            print(f'No metadata found for game ID: {id}')
+            not_found_games_ids.append(id)
+            continue
+        else:
+            stage = json_response.get(f'{id}').get('data')
+
+        df_game_metadata = {
+            'steam_game_id': stage.get('steam_appid'),
+            'name': stage.get('name'),
+            'required_age': stage.get('required_age'),
+            'is_free': stage.get('is_free'),
+            'dlc': [stage.get('dlc')],
+            'about_the_game': stage.get('about_the_game'),
+            'short_description': stage.get('short_description'),
+            'supported_languages': [stage.get('supported_languages')],
+            'header_image': stage.get('header_image'),
+            'website': stage.get('website'),
+            'developers': [', '.join(stage.get('developers')) if stage.get('developers') else None],
+            'publishers': [', '.join(stage.get('publishers')) if stage.get('publishers') else None],
+            'genres': [', '.join([genre['description'] for genre in stage.get('genres')]) if stage.get('genres') else None],
+            'categories': [', '. join([ category['description'] for category in stage.get('categories')]) if stage.get('categories') else None],
+            'media': [stage.get('screenshots') if stage.get('screenshots') else None]
+        }
+
+        game_metadata_list.append(df_game_metadata)
+
+    df_game_metadata_final = pd.DataFrame(game_metadata_list)
+    num_not_found = len(not_found_games_ids)
+
+    return df_game_metadata_final, num_not_found
