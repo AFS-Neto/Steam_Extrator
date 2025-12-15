@@ -2,6 +2,7 @@ import requests
 import os
 import pandas as pd
 import time
+import json
 import tkinter as tk
 from tkinter import filedialog
 import questionary
@@ -343,17 +344,17 @@ def extract_game_metadatas(game_list):
             'name': stage.get('name'),
             'required_age': stage.get('required_age'),
             'is_free': stage.get('is_free'),
-            'dlc': [stage.get('dlc')],
+            'dlc': json.dumps(stage.get('dlc')) if stage.get('dlc') else None,
             'about_the_game': stage.get('about_the_game'),
             'short_description': stage.get('short_description'),
-            'supported_languages': [stage.get('supported_languages')],
+            'supported_languages': json.dumps(stage.get('supported_languages')) if stage.get('supported_languages') else None,
             'header_image': stage.get('header_image'),
             'website': stage.get('website'),
-            'developers': [', '.join(stage.get('developers')) if stage.get('developers') else None],
-            'publishers': [', '.join(stage.get('publishers')) if stage.get('publishers') else None],
-            'genres': [', '.join([genre['description'] for genre in stage.get('genres')]) if stage.get('genres') else None],
-            'categories': [', '. join([ category['description'] for category in stage.get('categories')]) if stage.get('categories') else None],
-            'media': [stage.get('screenshots') if stage.get('screenshots') else None]
+            'developers': json.dumps(stage.get('developers')) if stage.get('developers') else None,
+            'publishers': json.dumps(stage.get('publishers')) if stage.get('publishers') else None,
+            'genres': json.dumps(stage.get('genres')) if stage.get('genres') else None,
+            'categories': json.dumps(stage.get('categories')) if stage.get('categories') else None,
+            'media': json.dumps(stage.get('movies')) if stage.get('movies') else None,
         }
 
         game_metadata_list.append(df_game_metadata)

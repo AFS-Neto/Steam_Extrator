@@ -106,7 +106,7 @@ for indesx, game in tqdm(df_game_information_final.iterrows(), desc="Fetching ac
 
 
 df_achievements  = pd.DataFrame(collect_achievements_info)
-print(f'total games whith no achievements: {len(no_information_games)}')
+print(f'\ntotal games whith no achievements: {len(no_information_games)}')
 
 
 df_achievements_raw = pd.DataFrame(
@@ -130,11 +130,22 @@ df_final = df_game_status.drop(columns=['steam_user_id_y', 'has_community_visibl
 
 game_set = df_final['steam_game_id'].unique().tolist()
 
+str_list = []  
+
+for item in game_set:
+    str_list.append(str(item))
+
 try:
-    df_game_metadatas, num_not_found = extract_game_metadatas(game_set)
-    print(f'Total games with no metadata found: {num_not_found}, {num_not_found/len(game_set)*100:.2f}%')
+    print('\nExtracting game metadatas for game data enrichment')
+    df_game_metadata, num_not_found = extract_game_metadatas(str_list)
+
+    # dh_updated added to metadata dataframe
+    df_game_metadata['dh_updated'] = datetime.now()
+
+    print(f'Total games with no metadata found: {num_not_found}, {num_not_found/len(str_list)*100:.2f}%')
 except Exception as e:
     print(f'Error extracting game metadatas: {e}')
+    df_game_metadata, num_not_found = None, 0
 
 #------------------------------------#options for user
 
@@ -168,8 +179,22 @@ if action == 3:
 #------------------------------------#Save data to local sqlite database #
 
 if action == 4:
-    save_to_sqlite(df_final, table_name='collection_game_data', method='append')
-    save_to_sqlite(df_user_final, table_name='profile_data', method='append')
-
-
-
+    try:
+        print('\nSaving game data to database...')
+        save_to_sqlite(df_final, table_name='collection_game_data', method='append')
+    except Exception as e:
+        print(f'Error saving game data to database: {e}')
+    
+    try:
+        print('\nSaving user profile data to database...')
+        save_to_sqlite(df_user_final, table_name='profile_data', method='append')
+    except Exception as e:
+        print(f'Error saving user profile data to database: {e}')
+    
+    try:
+        print('\nSaving metadata data to database...')
+        save_to_sqlite(df_game_metadata, table_name='game_metadata', method='append')
+    except Exception as e:
+        print(f'Error saving metadata data to database: {e}')
+    
+    
